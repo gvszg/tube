@@ -49,12 +49,35 @@ class Tube
       send_response(env)
     end
 
+    REASONS = {
+      200 => "OK",
+      404 => "Not found"
+    }
+
     def send_response(env)
       status, headers, body = @app.call(env)
 
-      @socket.write "HTTP/1.1 200 OK\r\n"
+      # @socket.write "HTTP/1.1 200 OK\r\n"
+      # @socket.write "\r\n"
+      # @socket.write "hello\n"
+
+      reason = REASONS[status]
+
+      @socket.write "HTTP/1.1 #{status} #{reason}\r\n"
       @socket.write "\r\n"
-      @socket.write "hello\n"
+      # @socket.write headers
+      # headers.each { |h| @socket.write h + "\r\n" }
+      # headers.each_pair {|h| @socket.write(h.join(": ")+"\r\n") }
+      headers.each_pair do |name, value|
+        @socket.write "#{name}: #{value}\r\n"
+      end
+      @socket.write "\r\n"
+      # @socket.write body
+      body.each do |chunk|
+        @socket.write chunk
+      end
+      # @socket.write "\r\n"
+      body.close if body.respond_to? :close
 
       close
     end
@@ -63,20 +86,35 @@ class Tube
       @socket.close
     end
   end
-end
 
-class App
-  def call(env)
-    message = "Hello from the tube.\n"
-    [
-      200,
-      { 'Content-Type' => 'text/plain', 'Content-Length' => message.size.to_s },
-      [message]
-    ]
+  class Builder
+    attr_reader :app
+
+    def run(app)
+      @app = app
+    end
+
+    def self.parse_file(file)
+      content = File.read(file)
+      builder = self.new
+      builder.instance_eval(content)
+      builder.app
+    end
   end
 end
 
-app = App.new
+# class App
+#   def call(env)
+#     message = "Hello from the tube.\n"
+#     [
+#       200,
+#       { 'Content-Type' => 'text/plain', 'Content-Length' => message.size.to_s },
+#       [message]
+#     ]
+#   end
+# end
+
+app = Tube::Builder.parse_file("config.ru")
 server = Tube.new(3000, app)
 puts "Plugging tube inti port 3000"
 server.start
